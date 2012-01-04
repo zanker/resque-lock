@@ -61,6 +61,11 @@ module Resque
           Resque.redis.del(lock(*args))
         end
       end
+
+      def on_failure_lock(error, *args)
+        Resque.redis.del(lock(*args))
+      end
+
     end
   end
 end
