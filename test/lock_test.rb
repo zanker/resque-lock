@@ -2,21 +2,24 @@ require 'test/unit'
 require 'resque'
 require 'resque/plugins/lock'
 
-$counter = 0
-
 class LockTest < Test::Unit::TestCase
   class Job
     extend Resque::Plugins::Lock
     @queue = :lock_test
 
-    def self.perform
-      raise "Woah woah woah, that wasn't supposed to happen"
+    class << self
+      attr_accessor :counter
+    end
+
+    def self.perform(params={})
+      @counter += 1
     end
   end
 
   def setup
+    Job.counter = 0
+    Resque.redis.keys('lock:*').each { |key| Resque.redis.del(key) }
     Resque.redis.del('queue:lock_test')
-    Resque.redis.del(Job.lock)
   end
 
   def test_lint
@@ -36,5 +39,25 @@ class LockTest < Test::Unit::TestCase
     3.times { Resque.enqueue(Job) }
 
     assert_equal 1, Resque.redis.llen('queue:lock_test')
+    assert Resque.redis.exists(Job.lock)
+  end
+
+  def test_perform_with_args
+    args = [{ 'a' => 1, :b => 2.0, 'c' => '3' }]
+    lock_key = Job.lock(*Resque.decode(Resque.encode(args)))
+    Resque.enqueue(Job, *args)
+    assert Resque.redis.exists(lock_key)
+    work_off_jobs
+    assert !Resque.redis.exists(lock_key)
+    assert_equal 1, Job.counter
+  end
+
+  private
+
+  def work_off_jobs
+    worker = Resque::Worker.new('*')
+    while job = worker.reserve
+      worker.perform(job)
+    end
   end
 end

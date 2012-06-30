@@ -49,7 +49,8 @@ module Resque
       end
 
       def before_enqueue_lock(*args)
-        Resque.redis.setnx(lock(*args), true)
+        normalized_args = Resque.decode(Resque.encode(args))
+        Resque.redis.setnx(lock(*normalized_args), true)
       end
 
       def around_perform_lock(*args)
